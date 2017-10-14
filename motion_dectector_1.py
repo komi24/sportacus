@@ -11,6 +11,17 @@ from collections import deque
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 
+import RPi.GPIO as GPIO
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(18, GPIO.OUT)
+pwm = GPIO.PWM(18,50)
+pwm.start(5)
+
+angle = 50
+coefMotor = .02
+
+
 
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
@@ -18,7 +29,7 @@ ap.add_argument("-v", "--video", help="path to the video file")
 ap.add_argument("-a", "--min-area", type=int, default=500, help="minimum area size")
 args = vars(ap.parse_args())
 timeLoopIndex = 0
-n_comp = 4
+n_comp = 1
 historySize = 10
 historyAverage = [ 1.0/(i+1) for i in range(historySize) ]
 
@@ -112,6 +123,7 @@ while True:
             centerHistory.pop()
             print('ok')
             print(np.mean(centerHistory,0))
+            smoothedpoint0 = tuple(np.average(centerHistory,0, historyAverage).astype(int))
             smoothedpoint1 = tuple(np.average(centerHistory,0, historyAverage).astype(int) -5)
             smoothedpoint2 = tuple(np.average(centerHistory,0, historyAverage).astype(int) +5)
             print(smoothedpoint1)
@@ -120,6 +132,14 @@ while True:
             cv2.rectangle(frame, smoothedpoint1, smoothedpoint2, (0,255,0))
             cv2.rectangle(frame, point1, point2, (255,0,0))
 
+            print("angle")
+            # angle = angle + coefMotor * ( smoothedpoint0 - np.array(frame.shape[:2]) / 2.0)[1]
+            angle = 50 + 0.2 * ( smoothedpoint0 - np.flip(np.array(frame.shape[:2]), 0) / 2.0)[0]
+            print(smoothedpoint0)
+            print(np.flip(np.array(frame.shape[:2]), 0))
+            print(angle)
+            print( (smoothedpoint0 - np.flip(np.array(frame.shape[:2]),0) / 2.0)[0])
+            pwm.ChangeDutyCycle(5.0 * float(angle) / 100.0 + 5.0)
     #(_, cnts, _) = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     # loop over the contours

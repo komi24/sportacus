@@ -10,49 +10,7 @@ from sklearn import mixture
 from collections import deque
 from picamera.array import PiRGBArray
 from picamera import PiCamera
-import requests
 
-#import RPi.GPIO as GPIO
-
-#GPIO.setmode(GPIO.BCM)
-#GPIO.setup(18, GPIO.OUT)
-#pwm = GPIO.PWM(18,100)
-
-pwm_started = False
-text = "starting"
-nextTime = time.time()
-# pwm.start(15)
-
-threshangle = 10
-initModMouv = 15
-angle = 50
-coefAngle = 0.5
-coefMotor = .02
-
-motor_inc = -3
-thresh_motor = 20
-
-curr_duty = None
-
-#pwm.start(15)
-pwm_started = True
-curr_duty = 15
-
-def move_left():
-    #pwm.ChangeDutyCycle(13)
-    r = requests.get('http://127.0.0.1:5000/left')
-    curr_duty = 13
-    print("MOVE LEFT")
-    print(r)
-
-def move_right():
-    #pwm.ChangeDutyCycle(17)
-    r = requests.get('http://127.0.0.1:5000/right')
-    curr_duty = 17
-    print("MOVE RIGHT")
-    print(r)
-
-# pwm.ChangeDutyCycle(50)
 
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
@@ -61,7 +19,7 @@ ap.add_argument("-a", "--min-area", type=int, default=500, help="minimum area si
 args = vars(ap.parse_args())
 timeLoopIndex = 0
 n_comp = 1
-historySize = 5
+historySize = 10
 historyAverage = [ 1.0/(i+1) for i in range(historySize) ]
 
 # if the video argument is None, then we are reading from webcam
@@ -104,8 +62,8 @@ for f in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True
     # resize the frame, convert it to grayscale, and blur it
     frame = imutils.resize(frame, width=500)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (15, 15), 0.4)
-    #text = "Unoccupied"
+    gray = cv2.GaussianBlur(gray, (5, 5), 0.4)
+    text = "Unoccupied"
     
     # if the first frame is None, initialize it
     if firstFrame is None:
@@ -113,7 +71,6 @@ for f in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True
         rawCapture.truncate(0)
         maskSamples = np.array([ [(i,j) for j in range(gray.shape[1])] for i in range(gray.shape[0])])
         firstFrame = gray
-        modmouv = 0
         continue
 
     # compute the absolute difference between the current frame and
@@ -130,10 +87,8 @@ for f in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True
     samples = maskSamples[maskS]
     #samples = [ p for p in maskSamples if thresh[p[0], p[1]] != 0]
     ##print(len(samples))
-    #print(nextTime)
-    print(len(samples))
-    print("len")
-    if len(samples) > 5 and len(samples) < 10000 :
+    #print(len(samples))
+    if len(samples) > 5:
         #print('ok')
         #print(samples[0])
         samples = samples.reshape(-1, 2)
@@ -149,37 +104,20 @@ for f in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True
             point1 = tuple(np.flip(means[i].astype(int), 0)-5)
             point2 = tuple(np.flip(means[i].astype(int), 0)+5)
             point0 = tuple(np.flip(means[i].astype(int), 0))
-            if (center is None): 
+            if center is None:
                 center = means[0]
                 centerHistory = deque([center for i in range(historySize)])
-                print(gray.shape)
             centerHistory.appendleft(point0)
             centerHistory.pop()
-            #print('ok')
-            #print(np.mean(centerHistory,0))
-            smoothedpoint0 = tuple(np.average(centerHistory,0, historyAverage).astype(int))
+            print('ok')
+            print(np.mean(centerHistory,0))
             smoothedpoint1 = tuple(np.average(centerHistory,0, historyAverage).astype(int) -5)
             smoothedpoint2 = tuple(np.average(centerHistory,0, historyAverage).astype(int) +5)
+            print(smoothedpoint1)
             #print(point1)
             #rects.append(point)
             cv2.rectangle(frame, smoothedpoint1, smoothedpoint2, (0,255,0))
             cv2.rectangle(frame, point1, point2, (255,0,0))
-
-            delta = 0.2 * ( smoothedpoint0 - np.flip(np.array(frame.shape[:2]), 0) / 2.0)[0]
-            print("thresh angle :" + str(delta))
-            #print(delta)
-            text = "gauche" if delta > 0 else "droite"
-            angle = angle if (np.abs(delta)< threshangle)  else angle + coefAngle * delta
-            #print(angle)
-            angle = angle if (angle > 0) and (angle < 100) else 50
-            if angle == 50:
-                print("error")
-            #print(angle)
-            #print(float(angle) / 5.0 + 5.0)
-            #print("END")
-
-            #nextTime = time.time() + 2
-
 
     #(_, cnts, _) = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
@@ -211,40 +149,6 @@ for f in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True
         break
     firstFrame = gray
     rawCapture.truncate(0)
-
-    # asservissement servo moteur
-    print("thresh motor :" + str(np.abs(angle - 50)))
-    print("time :" + str(nextTime < time.time()))
-    print("angle : " + str(angle))
-    print("duty: " + str(curr_duty))
-    if pwm_started and np.abs(angle - 50) > thresh_motor and 5 < curr_duty and curr_duty < 25 and nextTime < time.time():
-        nextTime = time.time()+0.5
-        if angle < 50:
-            move_left()
-            #curr_duty += motor_inc
-            #pwm.ChangeDutyCycle((curr_duty))
-        else:
-            move_right()
-            #curr_duty -= motor_inc
-            #pwm.ChangeDutyCycle((curr_duty))
-        print("FROM DUTY : " + str(curr_duty))
-        angle = 50
-#    elif not pwm_started and nextTime < time.time():
-#        pwm_started = True
-#        if curr_duty is None:
-#            pwm.start(15)
-#            curr_duty = 15
-#        else:
-#            pwm.start(curr_duty)
-#        #pwm.start(int(float(angle) / 5.0 + 5.0))
-#        #curr_duty = float(angle) / 5.0 + 5.0
-#        print(curr_duty)
-#        print("FROM START")
-#    elif len(samples) > 5000:
-#        print("STOP")
-#        nextTime = time.time() + 2 
-#        #pwm_started = False
-#        #pwm.stop()
     # if timeLoopIndex == 1:
     #     timeLoopindex = -1
     #     firstFrame = gray
